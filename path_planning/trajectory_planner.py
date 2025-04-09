@@ -108,6 +108,14 @@ class PathPlan(Node):
             if u < 0 or v < 0 or u >= width or v >= height:
                 return False
             return map_msg.data[idx] == 0  # 0 = free space
+        
+        def is_edge_free(p1, p2, map_msg, steps=10):
+            for i in range(steps + 1):
+                u = p1[0] + (p2[0] - p1[0]) * i / steps
+                v = p1[1] + (p2[1] - p1[1]) * i / steps
+                if not is_free(u, v, map_msg):
+                    return False
+            return True
 
         def euclidean_distance(p1, p2):
             return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
@@ -200,10 +208,72 @@ class PathPlan(Node):
             # If we get here, no path was found
             self.get_logger().warn("No path found!")
             return []
+        
+        def steer(from_point, to_point, max_dist=0.5):
+            # Move from "from_point" toward "to_point" but limit step size
+            theta = math.atan2(to_point[1] - from_point[1], to_point[0] - from_point[0])
+            dist = min(max_dist, euclidean_distance(from_point, to_point))
+            new_point = (from_point[0] + dist * math.cos(theta), from_point[1] + dist * math.sin(theta))
+            return new_point
 
         def rrt(start_point, end_point, map):
-            # Implement RRT algorithm here
-            pass
+            start = (start_point.position.x, start_point.position.y)
+            goal = (end_point.position.x, end_point.position.y)
+
+            tree = {start: None}  # parent dictionary: node -> parent
+            nodes = [start]
+
+            max_iters = 5000
+            goal_threshold = 0.5  # meters
+
+            map_bounds = [
+                (map.info.origin.position.x, map.info.origin.position.x + map.info.width * map.info.resolution),
+                (map.info.origin.position.y, map.info.origin.position.y + map.info.height * map.info.resolution)
+            ]
+
+            for _ in range(max_iters):
+
+                if random.random() < 0.1: # 10% chance to sample the goal
+                    sample = goal
+                else:
+                    sample = (random.uniform(map_bounds[0][0], map_bounds[0][1]),
+                              random.uniform(map_bounds[1][0], map_bounds[1][1]))
+
+                # Find the nearest node in the tree
+                nearest = min(nodes, key=lambda node: euclidean_distance(node, sample))
+
+                # Steer towards the sample
+                new_node = steer(nearest, sample)
+
+                if not is_free(new_node[0], new_node[1], map):
+                    continue
+
+                if not is_edge_free(nearest, new_node, map):
+                    continue
+
+                # Add node
+                nodes.append(new_node)
+                tree[new_node] = nearest
+
+                # Check if goal is reached
+                if euclidean_distance(new_node, goal) < goal_threshold:
+                    tree[goal] = new_node
+                    self.get_logger().info("Goal reached!")
+                    break
+                
+                path = []
+                current = goal
+                while current is not None:
+                    path.append(current)
+                    current = tree.get(current)
+
+                path.reverse()
+
+                for (x,y) in path:
+                    self.trajectory.addPoint(x,y,0.0)
+
+                self.traj_pub.publish(self.trajectory.toPoseArray())
+                self.trajectory.publish_viz()
 
 
 def main(args=None):
