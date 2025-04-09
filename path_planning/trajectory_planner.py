@@ -70,6 +70,27 @@ class PathPlan(Node):
         self.traj_pub.publish(self.trajectory.toPoseArray())
         self.trajectory.publish_viz()
 
+        # ===== HELPER FUNCTIONS =====
+        def world_to_grid(x, y, map_msg):
+            resolution = map_msg.info.resolution
+            origin = map_msg.info.origin.position
+            u = int((x - origin.x) / resolution)
+            v = int((y - origin.y) / resolution)
+            return u, v
+
+        def is_free(x, y, map_msg):
+            u, v = world_to_grid(x, y, map_msg)
+            width = map_msg.info.width
+            height = map_msg.info.height
+            idx = v * width + u
+            if u < 0 or v < 0 or u >= width or v >= height:
+                return False
+            return map_msg.data[idx] == 0  # 0 = free space
+
+        def euclidean_distance(p1, p2):
+            return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+
+
         def a_star(start_point, end_point, map):
             # Implement A* algorithm here
             pass
