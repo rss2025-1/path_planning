@@ -8,6 +8,7 @@ from .utils import LineTrajectory
 import numpy as np
 import heapq
 import math
+import random
 
 
 class PathPlan(Node):
@@ -70,28 +71,14 @@ class PathPlan(Node):
             self.get_logger().warn("Waiting for start pose or map.")
 
     def plan_path(self, start_point, end_point, map):
-        # Clear any existing trajectory
-        self.trajectory.clear()
-        
-        # Get path using A*
-        path = a_star(start_point, end_point, map)
-        # path = dfs_search(start_point, end_point, map)  # <-- get path with dfs
-        
-        # If path was found, add points to trajectory and publish
-        if path and len(path) > 0:
-            for point in path:
-                self.trajectory.addPoint(point)
-            
-        # Publish trajectory regardless (empty if no path found)
-        self.traj_pub.publish(self.trajectory.toPoseArray())
-        self.trajectory.publish_viz()
 
         # ===== HELPER FUNCTIONS =====
         def world_to_grid(x, y, map_msg):
             resolution = map_msg.info.resolution
             origin = map_msg.info.origin.position
-            u = int((x - origin.x) / resolution)
-            v = int((y - origin.y) / resolution)
+            
+            u = int((origin.x - x) / resolution)
+            v = int((origin.y - y) / resolution)
             return u, v
 
         def grid_to_world(u, v, map_msg):
@@ -106,6 +93,7 @@ class PathPlan(Node):
             width = map_msg.info.width
             height = map_msg.info.height
             idx = v * width + u
+            #self.get_logger().info(f"Checking cell ({u}, {v}) with index {idx} with height {height} and width {width} with x {x} and y {y}")
             if u < 0 or v < 0 or u >= width or v >= height:
                 return False
             return map_msg.data[idx] == 0  # 0 = free space
@@ -134,7 +122,7 @@ class PathPlan(Node):
                 List of (x, y) tuples representing the path in world coordinates
             """
             # Convert start and goal to grid coordinates
-            start_x, start_y = start_point.position.x, start_point.position.y
+            start_x, start_y = start_point.pose.position.x, start_point.pose.position.y
             goal_x, goal_y = end_point.position.x, end_point.position.y
             
             start_grid = world_to_grid(start_x, start_y, map_msg)
@@ -205,10 +193,13 @@ class PathPlan(Node):
                             priority = new_cost + heuristic
                             heapq.heappush(open_set, (priority, next_node))
                             came_from[next_node] = current
+                
+                
             
-            # If we get here, no path was found
-            self.get_logger().warn("No path found!")
-            return []
+                # If we get here, no path was found
+                self.get_logger().warn("No path found!")
+                return []
+        
         
         def steer(from_point, to_point, max_dist=0.5):
             # Move from "from_point" toward "to_point" but limit step size
@@ -218,7 +209,7 @@ class PathPlan(Node):
             return new_point
 
         def rrt(start_point, end_point, map):
-            start = (start_point.position.x, start_point.position.y)
+            start = (start_point.pose.position.x, start_point.pose.position.y)
             goal = (end_point.position.x, end_point.position.y)
 
             tree = {start: None}  # parent dictionary: node -> parent
@@ -247,9 +238,11 @@ class PathPlan(Node):
                 new_node = steer(nearest, sample)
 
                 if not is_free(new_node[0], new_node[1], map):
+                    self.get_logger().info("Node is not free")
                     continue
 
                 if not is_edge_free(nearest, new_node, map):
+                    self.get_logger().info("Edge is not free")
                     continue
 
                 # Add node
@@ -262,19 +255,41 @@ class PathPlan(Node):
                     self.get_logger().info("Goal reached")
                     break
                 
-                path = []
-                current = goal
-                while current is not None:
-                    path.append(current)
-                    current = tree.get(current)
+            path = []
+            current = goal
+            while current is not None:
+                path.append(current)
+                current = tree.get(current)
 
-                path.reverse()
+            path.reverse()
 
-                for (x,y) in path:
-                    self.trajectory.addPoint(x,y,0.0)
+            self.get_logger().info(f"Path, {path}")
+            # Clear any existing trajectory
+            self.trajectory.clear()
+            for (x,y) in path:
+                self.trajectory.addPoint((x,y,0.0))
 
-                self.traj_pub.publish(self.trajectory.toPoseArray())
-                self.trajectory.publish_viz()
+            self.traj_pub.publish(self.trajectory.toPoseArray())
+            self.trajectory.publish_viz()
+        
+        sampling = False
+        if not sampling:
+            path = a_star(self.start_pose, self.goal_pose, self.map)
+            # Clear any existing trajectory
+            self.trajectory.clear()
+            
+            # If path was found, add points to trajectory and publish
+            if path and len(path) > 0:
+                for point in path:
+                    self.trajectory.addPoint(point)
+                
+            # Publish trajectory regardless (empty if no path found)
+            self.traj_pub.publish(self.trajectory.toPoseArray())
+            self.trajectory.publish_viz()
+        else:
+            rrt(self.start_pose, self.goal_pose, self.map)
+
+        self.get_logger().info("Path planning completed.")
 
 
         def dfs_search(start_point, end_point, map):
