@@ -51,17 +51,32 @@ class PathPlan(Node):
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
 
     def map_cb(self, msg):
-        raise NotImplementedError
+        self.map = msg
+        self.get_logger().info("Map received")
 
     def pose_cb(self, pose):
-        raise NotImplementedError
+        self.start_pose = pose.pose
+        self.get_logger().info("Pose received")
 
     def goal_cb(self, msg):
-        raise NotImplementedError
+        self.goal_pose = msg.pose
+        self.get_logger().info("Goal received")
+        if hasattr(self, 'start_pose') and hasattr(self, 'map'):
+            self.plan_path(self.start_pose, self.goal_pose, self.map)
+        else:
+            self.get_logger().warn("Waiting for start pose or map.")
 
     def plan_path(self, start_point, end_point, map):
         self.traj_pub.publish(self.trajectory.toPoseArray())
         self.trajectory.publish_viz()
+
+        def a_star(start_point, end_point, map):
+            # Implement A* algorithm here
+            pass
+
+        def rrt(start_point, end_point, map):
+            # Implement RRT algorithm here
+            pass
 
 
 def main(args=None):
