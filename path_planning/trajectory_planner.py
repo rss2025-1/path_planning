@@ -75,6 +75,7 @@ class PathPlan(Node):
         
         # Get path using A*
         path = a_star(start_point, end_point, map)
+        # path = dfs_search(start_point, end_point, map)  # <-- get path with dfs
         
         # If path was found, add points to trajectory and publish
         if path and len(path) > 0:
@@ -258,7 +259,7 @@ class PathPlan(Node):
                 # Check if goal is reached
                 if euclidean_distance(new_node, goal) < goal_threshold:
                     tree[goal] = new_node
-                    self.get_logger().info("Goal reached!")
+                    self.get_logger().info("Goal reached")
                     break
                 
                 path = []
@@ -274,6 +275,54 @@ class PathPlan(Node):
 
                 self.traj_pub.publish(self.trajectory.toPoseArray())
                 self.trajectory.publish_viz()
+
+
+        def dfs_search(start_point, end_point, map):
+            start_x, start_y = start_point.position.x, start_point.position.y
+            goal_x, goal_y = end_point.position.x, end_point.position.y
+
+            start_grid = world_to_grid(start_x, start_y, map)
+            goal_grid = world_to_grid(goal_x, goal_y, map)
+
+            if not is_free(start_x, start_y, map):
+                self.get_logger().warn("Start position not free")
+                return []
+
+            if not is_free(goal_x, goal_y, map):
+                self.get_logger().warn("Goal position not free")
+                return []
+
+            stack = [start_grid]
+            came_from = {start_grid: None}
+            visited = set()
+
+            # 4 connected grid
+            movements = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+
+            while stack:
+                current = stack.pop()
+
+                if current == goal_grid:
+                    grid_path = []
+                    while current is not None:
+                        grid_path.append(current)
+                        current = came_from[current]
+                    grid_path.reverse()
+
+                    world_path = [grid_to_world(x, y, map) for x, y in grid_path]
+                    return world_path
+
+                visited.add(current)
+
+                for dx, dy in movements:
+                    next_node = (current[0] + dx, current[1] + dy)
+                    next_world = grid_to_world(next_node[0], next_node[1], map)
+
+                    if next_node not in visited and is_free(*next_world, map):
+                        came_from[next_node] = current
+                        stack.append(next_node)
+            return []
+
 
 
 def main(args=None):
