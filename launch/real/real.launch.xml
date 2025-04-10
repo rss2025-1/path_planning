@@ -1,3 +1,10 @@
 <launch>
-    <!--Add your code-->
+    <!-- Safety Controller Node -->
+    <node
+        pkg="safety_controller"
+        exec="safety_controller"
+        name="safety_controller"
+        output="screen">
+        <param from="$(find wall_follower)/config/wall_follower_params.yaml"/>
+    </node>
 </launch>
