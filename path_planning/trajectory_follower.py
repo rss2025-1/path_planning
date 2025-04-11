@@ -122,7 +122,7 @@ class PurePursuit(Node):
             t2 = (-b + sqrt_disc) / (2 * a)
             return (A + max(t1,t2)* d).tolist()
 
-        return traj[closest_idx + 1]  # No intersection found, use the farther endpoint of the closest segment
+        return traj[closest_idx + 1] if closest_idx + 1 < len(traj) else traj[-1]  # No intersection found, use the farther endpoint of the closest segment
 
     
     def get_vehicle_pose(self, odometry_msg):
