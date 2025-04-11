@@ -18,17 +18,16 @@ class PurePursuit(Node):
         super().__init__("trajectory_follower")
         self.declare_parameter('odom_topic', "default")
         self.declare_parameter('drive_topic', "default")
+        self.declare_parameter('trajectory', "default")
 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
         self.lookahead = 0.5  # FILL IN #
-        self.speed = 0.5  # FILL IN #
+        self.speed = 1.0 #0.5  # FILL IN #
         self.wheelbase_length = 0.34  # FILL IN #
 
-        # self.trajectory = LineTrajectory("/followed_trajectory")
-        self.trajectory = LineTrajectory("/example_trajectories/trajectory_2.traj")
-
+        self.trajectory = LineTrajectory(self, "/followed_trajectory")
 
         self.traj_sub = self.create_subscription(PoseArray,
                                                  "/trajectory/current",
@@ -63,38 +62,26 @@ class PurePursuit(Node):
 
         self.log_counter += 1
 
-    def find_closest_point_on_trajectory(self, car_x, car_y):
+    def find_closest_point_on_trajectory(self, traj, P):
         """
         Find the closest point on the trajectory to the car.
         Returns:
             closest_point (np.array): Closest point on the trajectory
             closest_idx (int): Index of the starting point of the segment containing the closest point
         """
-        traj = np.array(self.trajectory.points)  # shape (N, 2)
-    
-        P = np.array([car_x, car_y])
+        A = traj[:-1]
+        B = traj[1:]
 
-        min_dist = float('inf')
-        closest_point = None
-        closest_idx = 0
-        self.get_logger().info(f"{self.trajectory.points}")
-        for i in range(len(traj) - 1):
-            A = traj[i]
-            B = traj[i + 1]
-            AB = B - A
-            AP = P - A
-            self.get_logger().info(f"{i, AB, AP}")
-            t = np.dot(AP, AB) / np.dot(AB, AB)
-            t_clamped = np.clip(t, 0, 1)
-            proj = A + t_clamped * AB
+        AB = B - A  # Vector from A to B for all segments, shape (N-1, 2)
+        AP = P - A  # Vector from A to P for all segments, shape (N-1, 2)
 
-            dist = np.linalg.norm(P - proj)
-            if dist < min_dist:
-                min_dist = dist
-                closest_point = proj
-                closest_idx = i
+        t = np.sum(AP * AB, axis=1) / np.sum(AB * AB, axis=1)
+        t_clamped = np.clip(t, 0, 1)  # Clamping t to [0, 1]
+        proj = A + t_clamped[:, np.newaxis] * AB  # Projected points on the segments
+        dists = np.linalg.norm(P - proj, axis=1)
+        closest_idx = np.argmin(dists)
 
-        return closest_point, closest_idx
+        return closest_idx
 
     def find_lookahead_point(self, car_x, car_y):
         """
@@ -104,14 +91,19 @@ class PurePursuit(Node):
         with radius = lookahead distance.
         """
 
-        # Step 1: Find closest point on trajectory
-        closest_point, closest_idx = self.find_closest_point_on_trajectory(car_x, car_y)
-
-        # Step 2: Search for intersection with lookahead circle
         traj = np.array(self.trajectory.points)
         P = np.array([car_x, car_y])
+        if traj.shape[0] < 2:
+            self.get_logger().error("Not enough points in trajectory to compute closest point.")
+            return None
 
-        for i in range(closest_idx, len(traj) - 1):
+        # Step 1: Find closest point on trajectory
+        closest_idx = self.find_closest_point_on_trajectory(traj, P)
+
+        # Step 2: Search for intersection with lookahead circle
+
+        # Check the 5 closest segments to find an intersection
+        for i in range(closest_idx, min(closest_idx + 5, len(traj) - 1)):
             A = traj[i]
             B = traj[i + 1]
             d = B - A
@@ -129,12 +121,8 @@ class PurePursuit(Node):
             t1 = (-b - sqrt_disc) / (2 * a)
             t2 = (-b + sqrt_disc) / (2 * a)
             return (A + max(t1,t2)* d).tolist()
-            # for t in [t1, t2]:
-            #     if 0 <= t <= 1:
-            #         intersection = A + t * d
-            #         return intersection.tolist()
 
-        return None  # No intersection found
+        return traj[closest_idx + 1]  # No intersection found, use the farther endpoint of the closest segment
 
     
     def get_vehicle_pose(self, odometry_msg):
@@ -147,6 +135,7 @@ class PurePursuit(Node):
         _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
 
         return position.x, position.y, yaw
+    
     def compute_steering_angle(self, car_x, car_y, yaw, lookahead_point):
         """ Compute the steering angle based on the pure pursuit algorithm. """
         dx = lookahead_point[0] - car_x
@@ -159,20 +148,23 @@ class PurePursuit(Node):
         if local_x <= 0:
             # Lookahead point is behind the vehicle
             self.get_logger().info("Lookahead point is behind the vehicle.")
-            return 0  # No steering needed if the point is behind
+            return 0.0  # No steering needed if the point is behind
 
         # Compute the curvature and then the steering angle using the bicycle model
         eta = np.arctan2(local_y, local_x)
-        R = self.lookahead / (2 * np.sin(eta))
-        steering_angle = np.arctan2(self.wheelbase_length, R)
+        steering_angle = np.arctan2(2 * self.wheelbase_length * np.sin(eta), self.lookahead)
 
         return steering_angle
-    def publish_drive_command(self, steering_angle):
+    
+    def publish_drive_command(self, steering_angle, speed=None):
         """ Publish the Ackermann drive message with the computed steering angle and speed. """
+        if speed is None:
+            speed = self.speed
         drive_msg = AckermannDriveStamped()
         drive_msg.drive.steering_angle = steering_angle
-        drive_msg.drive.speed = self.speed
+        drive_msg.drive.speed = speed
         self.drive_pub.publish(drive_msg)
+
     def trajectory_callback(self, msg):
         self.get_logger().info(f"Receiving new trajectory {len(msg.poses)} points")
 
