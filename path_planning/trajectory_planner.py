@@ -9,6 +9,8 @@ import numpy as np
 import heapq
 import math
 import random
+from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Point
 
 
 class PathPlan(Node):
@@ -54,6 +56,20 @@ class PathPlan(Node):
 
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
 
+        # Visualization for RRT tree
+        self.rrt_tree_pub = self.create_publisher(
+            MarkerArray, 
+            "/rrt_tree", 
+            10
+        )
+
+        self.rrt_points_pub = self.create_publisher(
+            Marker,
+            "/rrt_points",
+            10
+        )
+
+
     def map_cb(self, msg):
         self.map = msg
         self.get_logger().info("Map received")
@@ -93,12 +109,13 @@ class PathPlan(Node):
             width = map_msg.info.width
             height = map_msg.info.height
             idx = v * width + u
-            #self.get_logger().info(f"Checking cell ({u}, {v}) with index {idx} with height {height} and width {width} with x {x} and y {y}")
             if u < 0 or v < 0 or u >= width or v >= height:
                 return False
-            return map_msg.data[idx] == 0  # 0 = free space
+            return map_msg.data[idx] < 40 and map_msg.data[idx] >= 0 
         
-        def is_edge_free(p1, p2, map_msg, steps=10):
+        def is_edge_free(p1, p2, map_msg, step_size=0.05):
+            dist = euclidean_distance(p1, p2)
+            steps = max(int(dist / step_size), 1)
             for i in range(steps + 1):
                 u = p1[0] + (p2[0] - p1[0]) * i / steps
                 v = p1[1] + (p2[1] - p1[1]) * i / steps
@@ -201,16 +218,60 @@ class PathPlan(Node):
                 return []
         
         
-        def steer(from_point, to_point, max_dist=0.5):
+        def steer(from_point, to_point, max_dist=20):
             # Move from "from_point" toward "to_point" but limit step size
             theta = math.atan2(to_point[1] - from_point[1], to_point[0] - from_point[0])
             dist = min(max_dist, euclidean_distance(from_point, to_point))
             new_point = (from_point[0] + dist * math.cos(theta), from_point[1] + dist * math.sin(theta))
             return new_point
+        
+        def make_edge_marker(start, end, id):
+            marker = Marker()
+            marker.header.frame_id = "map"  # assuming your map frame
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = "rrt_tree"
+            marker.id = id
+            marker.type = Marker.LINE_STRIP
+            marker.action = Marker.ADD
+            marker.scale.x = 0.02  # Line width
+            marker.color.a = 1.0
+            marker.color.r = 0.0
+            marker.color.g = 0.0
+            marker.color.b = 1.0
+            p_start = Point()
+            p_start.x, p_start.y, p_start.z = start[0], start[1], 0.0
+            p_end = Point()
+            p_end.x, p_end.y, p_end.z = end[0], end[1], 0.0
+            marker.points = [p_start, p_end]
+            return marker
+        
+        def make_point_marker(id):
+            # Initialize a Marker for RRT points
+            points_marker = Marker()
+            points_marker.header.frame_id = "map"
+            points_marker.header.stamp = self.get_clock().now().to_msg()
+            points_marker.ns = "rrt_points"
+            points_marker.id = id
+            points_marker.type = Marker.POINTS
+            points_marker.action = Marker.ADD
+            # Define scale for points (x and y set the width and height of the points)
+            points_marker.scale.x = 0.2
+            points_marker.scale.y = 0.2
+            # Set color (e.g., red points)
+            points_marker.color.a = 1.0
+            points_marker.color.r = 1.0
+            points_marker.color.g = 0.0
+            points_marker.color.b = 0.0
+            points_marker.points = []
+            return points_marker
+
+
 
         def rrt(start_point, end_point, map):
+            tree_markers = MarkerArray()
             start = (start_point.pose.position.x, start_point.pose.position.y)
             goal = (end_point.position.x, end_point.position.y)
+            self.get_logger().info(f"Start: {start}, Goal: {goal}")
 
             tree = {start: None}  # parent dictionary: node -> parent
             nodes = [start]
@@ -218,42 +279,77 @@ class PathPlan(Node):
             max_iters = 5000
             goal_threshold = 0.5  # meters
 
+            # map_bounds = [
+            #     (map.info.origin.position.x, map.info.origin.position.x + map.info.width * map.info.resolution),
+            #     (map.info.origin.position.y, map.info.origin.position.y + map.info.height * map.info.resolution)
+            # ]
+
             map_bounds = [
-                (map.info.origin.position.x, map.info.origin.position.x + map.info.width * map.info.resolution),
-                (map.info.origin.position.y, map.info.origin.position.y + map.info.height * map.info.resolution)
+                (0, map.info.width - 1),
+                (0, map.info.height - 1)
             ]
+
 
             for _ in range(max_iters):
 
-                if random.random() < 0.1: # 10% chance to sample the goal
+                if False:#random.random() < 0.1: # 10% chance to sample the goal
                     sample = goal
                 else:
-                    sample = (random.uniform(map_bounds[0][0], map_bounds[0][1]),
-                              random.uniform(map_bounds[1][0], map_bounds[1][1]))
-
+                    assert map.info.width > 0 and map.info.height > 0
+                    sample = (random.uniform(0, map.info.height - 1),
+                              random.uniform(0, map.info.width - 1))
+                
                 # Find the nearest node in the tree
                 nearest = min(nodes, key=lambda node: euclidean_distance(node, sample))
 
                 # Steer towards the sample
                 new_node = steer(nearest, sample)
 
+                points_marker = make_point_marker(len(tree_markers.markers))
+                new_point = Point()
+                new_point.x = new_node[0]
+                new_point.y = new_node[1]
+                new_point.z = 0.0
+                points_marker.points.append(new_point)
+                new_point = Point()
+                new_point.x = 0.0
+                new_point.y = 0.0
+                new_point.z = 0.0
+                points_marker.points.append(new_point)
+
+
+
                 if not is_free(new_node[0], new_node[1], map):
-                    self.get_logger().info("Node is not free")
+                    self.get_logger().warn(f"Nde {new_node} is not free")
                     continue
+                else:
+                    self.get_logger().info(f"New node: {new_node}")
 
                 if not is_edge_free(nearest, new_node, map):
-                    self.get_logger().info("Edge is not free")
+                    self.get_logger().warn("Edge is not free")
                     continue
+
 
                 # Add node
                 nodes.append(new_node)
                 tree[new_node] = nearest
+                tree_markers.markers.append(make_edge_marker(nearest, new_node, len(tree_markers.markers)))
+
+
+                if _ % 50 == 0:  # Every 50 steps
+                    self.rrt_tree_pub.publish(tree_markers)
+                    self.rrt_points_pub.publish(points_marker)
+                
+
 
                 # Check if goal is reached
                 if euclidean_distance(new_node, goal) < goal_threshold:
                     tree[goal] = new_node
                     self.get_logger().info("Goal reached")
                     break
+
+                
+
                 
             path = []
             current = goal
@@ -272,7 +368,7 @@ class PathPlan(Node):
             self.traj_pub.publish(self.trajectory.toPoseArray())
             self.trajectory.publish_viz()
         
-        sampling = False
+        sampling = True
         if not sampling:
             path = a_star(self.start_pose, self.goal_pose, self.map)
             # Clear any existing trajectory
