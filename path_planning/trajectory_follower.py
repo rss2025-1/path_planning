@@ -5,6 +5,8 @@ from geometry_msgs.msg import PoseArray
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from tf_transformations import quaternion_from_euler, euler_from_quaternion
+from visualization_msgs.msg import Marker
+from .rviz_tools import RVizTools
 
 
 from .utils import LineTrajectory
@@ -23,8 +25,8 @@ class PurePursuit(Node):
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
-        self.lookahead = 0.5  # FILL IN #
-        self.speed = 1.0 #0.5  # FILL IN #
+        self.lookahead = 1.0#0.5  # FILL IN #
+        self.speed = 0.5 #0.5  # FILL IN #
         self.wheelbase_length = 0.34  # FILL IN #
 
         self.trajectory = LineTrajectory(self, "/followed_trajectory")
@@ -32,14 +34,17 @@ class PurePursuit(Node):
         self.traj_sub = self.create_subscription(PoseArray,
                                                  "/trajectory/current",
                                                  self.trajectory_callback,
-                                                 1)
+                                                 10)
         self.drive_pub = self.create_publisher(AckermannDriveStamped,
                                                self.drive_topic,
-                                               1)
+                                               10)
         self.odom_sub = self.create_subscription(Odometry,
                                                 self.odom_topic,
                                                 self.pose_callback,
-                                                1)
+                                                10)
+        self.radius_pub = self.create_publisher(Marker, "/radius", 10)
+        self.line_pub = self.create_publisher(Marker, "/line", 10)
+
         self.log_counter = 0
 
     def pose_callback(self, odometry_msg):
@@ -47,18 +52,17 @@ class PurePursuit(Node):
 
         lookahead_point = self.find_lookahead_point(car_x, car_y)
 
+
+
         if lookahead_point is None:
             if self.log_counter % 125 == 0:
                 self.get_logger().info("No lookahead point found. Stopping.")
                 # self.get_logger().info(f"{car_x, car_y, yaw}")
             self.log_counter += 1
             return
-
+        
         steering_angle = self.compute_steering_angle(car_x, car_y, yaw, lookahead_point)
         self.publish_drive_command(steering_angle)
-
-        # if self.log_counter % 125 == 0:
-        #     self.get_logger().info(f"{car_x, car_y, yaw}")
 
         self.log_counter += 1
 
@@ -144,7 +148,9 @@ class PurePursuit(Node):
         # rotate lookahead point into the robot frame 
         local_x = np.cos(-yaw) * dx - np.sin(-yaw) * dy
         local_y = np.sin(-yaw) * dx + np.cos(-yaw) * dy
-
+        self.get_logger().info(f"{local_x, local_y}")
+        RVizTools.plot_circle(self.lookahead, self.radius_pub)
+        RVizTools.plot_line(np.array([0,local_x]), np.array([0,local_y]), self.line_pub)
         if local_x <= 0:
             # Lookahead point is behind the vehicle
             self.get_logger().info("Lookahead point is behind the vehicle.")
