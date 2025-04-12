@@ -129,7 +129,7 @@ class PurePursuit(Node):
             # Visualize the line segment being followed
             # first_point = traj[i]
             # second_point = traj[i + 1]
-            # RVizTools.plot_line_map(np.array([first_point[0],second_point[0]]), np.array([first_point[1],second_point[1]]), self.closest_segment_pub)
+            # RVizTools.plot_line(np.array([first_point[0],second_point[0]]), np.array([first_point[1],second_point[1]]), self.closest_segment_pub, color=(0., 1., 1.),frame="/map")
 
             return (A + max(t1,t2)* d).tolist()
 
