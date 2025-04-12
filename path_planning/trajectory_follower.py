@@ -25,7 +25,7 @@ class PurePursuit(Node):
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
-        self.lookahead = 1.0#0.5  # FILL IN #
+        self.lookahead = 1.0 #0.5  # FILL IN #
         self.speed = 0.5 #0.5  # FILL IN #
         self.wheelbase_length = 0.34  # FILL IN #
 
@@ -44,6 +44,7 @@ class PurePursuit(Node):
                                                 10)
         self.radius_pub = self.create_publisher(Marker, "/radius", 10)
         self.line_pub = self.create_publisher(Marker, "/line", 10)
+        self.closest_segment_pub = self.create_publisher(Marker, "/closest_segment", 10)
 
         self.log_counter = 0
 
@@ -52,12 +53,9 @@ class PurePursuit(Node):
 
         lookahead_point = self.find_lookahead_point(car_x, car_y)
 
-
-
         if lookahead_point is None:
             if self.log_counter % 125 == 0:
                 self.get_logger().info("No lookahead point found. Stopping.")
-                # self.get_logger().info(f"{car_x, car_y, yaw}")
             self.log_counter += 1
             return
         
@@ -105,11 +103,14 @@ class PurePursuit(Node):
         closest_idx = self.find_closest_point_on_trajectory(traj, P)
 
         # Step 2: Search for intersection with lookahead circle
-
-        # Check the 5 closest segments to find an intersection
-        for i in range(closest_idx, min(closest_idx + 5, len(traj) - 1)):
+        for i in range(closest_idx, len(traj) - 1):
             A = traj[i]
             B = traj[i + 1]
+
+            # If the furthest endpoint of the segment is inside the lookahead circle, skip this segment.
+            if np.linalg.norm(B - P) < self.lookahead:
+                continue
+
             d = B - A
             f = A - P
 
@@ -124,9 +125,15 @@ class PurePursuit(Node):
             sqrt_disc = np.sqrt(discriminant)
             t1 = (-b - sqrt_disc) / (2 * a)
             t2 = (-b + sqrt_disc) / (2 * a)
+
+            # Visualize the line segment being followed
+            # first_point = traj[i]
+            # second_point = traj[i + 1]
+            # RVizTools.plot_line_map(np.array([first_point[0],second_point[0]]), np.array([first_point[1],second_point[1]]), self.closest_segment_pub)
+
             return (A + max(t1,t2)* d).tolist()
 
-        return traj[closest_idx + 1] if closest_idx + 1 < len(traj) else traj[-1]  # No intersection found, use the farther endpoint of the closest segment
+        return traj[closest_idx + 1]  # No intersection found, use the farther endpoint of the closest segment
 
     
     def get_vehicle_pose(self, odometry_msg):
