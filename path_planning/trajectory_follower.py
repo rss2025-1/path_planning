@@ -15,7 +15,7 @@ from .utils import LineTrajectory
 class PurePursuit(Node):
     """ Implements Pure Pursuit trajectory tracking with a fixed lookahead and speed.
     """
-
+    
     def __init__(self):
         super().__init__("trajectory_follower")
         self.declare_parameter('odom_topic', "default")
@@ -24,9 +24,9 @@ class PurePursuit(Node):
 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
-
+   
         self.lookahead = 1.0 #0.5  # FILL IN #
-        self.speed = 0.5 #0.5  # FILL IN #
+        self.speed = 4.0 #0.5  # FILL IN #
         self.wheelbase_length = 0.34  # FILL IN #
 
         self.trajectory = LineTrajectory(self, "/followed_trajectory")
@@ -104,7 +104,7 @@ class PurePursuit(Node):
 
         # Step 2: Search for intersection with lookahead circle
         for i in range(closest_idx, len(traj) - 1):
-            A = traj[i]
+            A =traj[i]
             B = traj[i + 1]
 
             # If the furthest endpoint of the segment is inside the lookahead circle, skip this segment.
@@ -126,11 +126,7 @@ class PurePursuit(Node):
             t1 = (-b - sqrt_disc) / (2 * a)
             t2 = (-b + sqrt_disc) / (2 * a)
 
-            # Visualize the line segment being followed
-            # first_point = traj[i]
-            # second_point = traj[i + 1]
-            # RVizTools.plot_line(np.array([first_point[0],second_point[0]]), np.array([first_point[1],second_point[1]]), self.closest_segment_pub, color=(0., 1., 1.),frame="/map")
-
+            
             return (A + max(t1,t2)* d).tolist()
 
         return traj[closest_idx + 1]  # No intersection found, use the farther endpoint of the closest segment
@@ -155,8 +151,8 @@ class PurePursuit(Node):
         # rotate lookahead point into the robot frame 
         local_x = np.cos(-yaw) * dx - np.sin(-yaw) * dy
         local_y = np.sin(-yaw) * dx + np.cos(-yaw) * dy
-        self.get_logger().info(f"{local_x, local_y}")
-        RVizTools.plot_circle(self.lookahead, self.radius_pub)
+        # self.get_logger().info(f"{local_x, local_y}")
+        RVizTools.plot_circle(self.lookahead, self.radius_pub) #visualize pure pursuit
         RVizTools.plot_line(np.array([0,local_x]), np.array([0,local_y]), self.line_pub)
         if local_x <= 0:
             # Lookahead point is behind the vehicle
@@ -180,7 +176,8 @@ class PurePursuit(Node):
 
     def trajectory_callback(self, msg):
         self.get_logger().info(f"Receiving new trajectory {len(msg.poses)} points")
-
+        self.get_logger().info(f"msg.poses type is {msg.poses}")
+        
         self.trajectory.clear()
         self.trajectory.fromPoseArray(msg)
         self.trajectory.publish_viz(duration=0.0)
