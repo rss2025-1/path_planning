@@ -193,35 +193,91 @@ class PathPlan(Node):
         return self.reconstruct_path(came_from, start, goal)
 
     def get_neighbors(self, node):
-        """Returns the neighboring nodes, ignoring walkable checks."""
+        """Returns the neighboring nodes, checking for collisions."""
         directions = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (-1, -1), (1, -1)]
         result = []
         
         for dx, dy in directions:
             neighbor = (node[0] + dx, node[1] + dy)
             
-            # Skip walkable check, just make sure it's within the map bounds
-            if self.is_in_bounds(neighbor):
+            # For diagonal moves, check if the edge is free
+            if abs(dx) == 1 and abs(dy) == 1:
+                if self.is_edge_free(node, neighbor):
+                    result.append(neighbor)
+            # For orthogonal moves, just check if the cell is free
+            elif self.is_cell_free(neighbor[0], neighbor[1]):
                 result.append(neighbor)
         
         return result
-        
-    def is_in_bounds(self, node):
-        """Checks if the node is within the map bounds, handling negative coordinates."""
+
+    def is_cell_free(self, grid_x, grid_y):
+        """Check if a specific grid cell is free (not an obstacle)."""
         if not self.map_info:
             return False
             
-        x, y = node
         width = self.map_info.info.width
         height = self.map_info.info.height
         
-        x_adjusted = x + width if x < 0 else x
-        y_adjusted = y + height if y < 0 else y
-        x, y = node
-        index = y * self.map_info.info.width + x
-
+        # Handle negative coordinates and ensure they're within bounds
+        grid_x = (grid_x + width) % width
+        grid_y = (grid_y + height) % height
         
-        return 0 <= x_adjusted < width and 0 <= y_adjusted < height and self.map_info.data[index] <= 80
+        # Check bounds
+        if grid_x < 0 or grid_y < 0 or grid_x >= width or grid_y >= height:
+            return False
+            
+        # Calculate index
+        idx = grid_y * width + grid_x
+        
+        # Check if index is valid
+        if idx < 0 or idx >= len(self.map_info.data):
+            return False
+            
+        # Check if cell is traversable (not an obstacle)
+        return self.map_info.data[idx] == 0
+
+    def is_edge_free(self, node1, node2):
+        """
+        Checks if the edge between two grid cells is collision-free
+        using linear interpolation and sampling.
+        """
+        # If nodes are the same, edge is free
+        if node1 == node2:
+            return True
+            
+        # For adjacent cells, just check if both endpoints are free
+        if abs(node1[0] - node2[0]) <= 1 and abs(node1[1] - node2[1]) <= 1:
+            return self.is_cell_free(node1[0], node1[1]) and self.is_cell_free(node2[0], node2[1])
+        
+        # For longer edges, sample points along the edge
+        x1, y1 = node1
+        x2, y2 = node2
+        
+        # Calculate distance in grid cells
+        dist = ((x2 - x1)**2 + (y2 - y1)**2)**0.5
+        
+        # Number of points to check along the edge (at least 3)
+        steps = max(int(dist * 2), 3)
+        
+        # Check points along the edge
+        for i in range(steps + 1):
+            # Linear interpolation
+            x = x1 + (x2 - x1) * i / steps
+            y = y1 + (y2 - y1) * i / steps
+            
+            # Convert to integer grid coordinates
+            grid_x = int(round(x))
+            grid_y = int(round(y))
+            
+            # Check if this point is free
+            if not self.is_cell_free(grid_x, grid_y):
+                return False
+                
+        return True
+
+    def is_in_bounds(self, node):
+        """Checks if the node is within the map bounds and not in collision."""
+        return self.is_cell_free(node[0], node[1])
 
     def world_to_grid(self, world_x, world_y):
         """Converts world coordinates to grid coordinates."""
@@ -232,8 +288,8 @@ class PathPlan(Node):
         origin_y = self.map_info.info.origin.position.y
         resolution = self.map_info.info.resolution
         
-        grid_x = int((world_x - origin_x) / resolution)
-        grid_y = int((world_y - origin_y) / resolution)
+        grid_x = - int((world_x - origin_x) / resolution)
+        grid_y = - int((world_y - origin_y) / resolution)
         
         return grid_x, grid_y
 
@@ -246,8 +302,8 @@ class PathPlan(Node):
         origin_y = self.map_info.info.origin.position.y
         resolution = self.map_info.info.resolution
         
-        world_x = grid_x * resolution + origin_x
-        world_y = grid_y * resolution + origin_y
+        world_x = - grid_x * resolution + origin_x
+        world_y = - grid_y * resolution + origin_y
         
         return world_x, world_y
 
@@ -265,7 +321,7 @@ class PathPlan(Node):
     def heuristic(self, a, b):
         """Heuristic function used for A* pathfinding."""
         # Manhattan distance
-        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+        return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
 
     def reconstruct_path(self, came_from, start, goal):
         """Reconstructs the path from start to goal using the came_from map."""
