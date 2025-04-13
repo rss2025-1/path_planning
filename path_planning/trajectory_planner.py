@@ -164,7 +164,7 @@ class PathPlan(Node):
         cost_so_far[start] = 0
         
         nodes_explored = 0
-        max_nodes = 10000  # Limit to prevent infinite loops
+        max_nodes = 10000000  # Limit to prevent infinite loops
         
         while not frontier.empty() and nodes_explored < max_nodes:
             current = frontier.get()[1]
@@ -182,33 +182,91 @@ class PathPlan(Node):
                 new_cost = cost_so_far[current] + self.cost(current, next_node)
                 if next_node not in cost_so_far or new_cost < cost_so_far[next_node]:
                     cost_so_far[next_node] = new_cost
-                    priority = new_cost + self.heuristic(goal, next_node)
+                    # Use a tie-breaking heuristic that slightly favors paths toward the goal
+                    # This helps prevent zigzagging and encourages more direct paths
+                    priority = new_cost + self.heuristic(goal, next_node) * 1.001
                     frontier.put((priority, next_node))
                     came_from[next_node] = current
         
         if goal not in came_from:
             self.get_logger().warn(f"No path found after exploring {nodes_explored} nodes")
-            return None
+            
+            # Try to find the closest point to the goal that we did reach
+            if came_from:
+                closest_node = min(came_from.keys(), key=lambda n: self.heuristic(n, goal))
+                self.get_logger().info(f"Returning path to closest reachable point: {closest_node}")
+                path = self.reconstruct_path(came_from, start, closest_node)
+                # Add the original goal at the end if possible
+                if self.is_edge_free(closest_node, goal):
+                    path.append(goal)
+                return path
+            
+            # If all else fails, return direct path
+            return [start, goal]
         
         return self.reconstruct_path(came_from, start, goal)
 
     def get_neighbors(self, node):
         """Returns the neighboring nodes, checking for collisions."""
+        # Include all 8 directions for better path flexibility
         directions = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (-1, -1), (1, -1)]
         result = []
         
         for dx, dy in directions:
             neighbor = (node[0] + dx, node[1] + dy)
             
-            # For diagonal moves, check if the edge is free
-            if abs(dx) == 1 and abs(dy) == 1:
-                if self.is_edge_free(node, neighbor):
+            # Check if the neighbor cell is free
+            if self.is_cell_free(neighbor[0], neighbor[1]):
+                # For diagonal moves, also check the adjacent cells to ensure we can actually move there
+                if abs(dx) == 1 and abs(dy) == 1:
+                    # Check if we can move horizontally and vertically to reach the diagonal
+                    if (self.is_cell_free(node[0] + dx, node[1]) and 
+                        self.is_cell_free(node[0], node[1] + dy)):
+                        result.append(neighbor)
+                else:
                     result.append(neighbor)
-            # For orthogonal moves, just check if the cell is free
-            elif self.is_cell_free(neighbor[0], neighbor[1]):
-                result.append(neighbor)
+        
+        # Debug logging
+        if not result:
+            self.get_logger().debug(f"No valid neighbors found for node {node}")
         
         return result
+
+    def cost(self, current, next_node):
+        """
+        Calculate the cost of moving from current to next_node.
+        Diagonal moves cost more than orthogonal moves.
+        """
+        dx = abs(next_node[0] - current[0])
+        dy = abs(next_node[1] - current[1])
+        
+        # Diagonal movement costs sqrt(2) ≈ 1.414
+        if dx == 1 and dy == 1:
+            return 1.414
+        else:
+            return 1.0
+
+    def heuristic(self, a, b):
+        """
+        Calculate the heuristic value (Euclidean distance).
+        This is an admissible heuristic for grid-based movement.
+        """
+        # Euclidean distance
+        return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
+
+    def reconstruct_path(self, came_from, start, goal):
+        """Reconstructs the path from start to goal using the came_from map."""
+        current = goal
+        path = []
+        
+        while current != start:
+            path.append(current)
+            current = came_from[current]
+        
+        path.append(start)
+        path.reverse()
+        
+        return path
 
     def is_cell_free(self, grid_x, grid_y):
         """Check if a specific grid cell is free (not an obstacle)."""
@@ -306,36 +364,6 @@ class PathPlan(Node):
         world_y = - grid_y * resolution + origin_y
         
         return world_x, world_y
-
-    def cost(self, from_node, to_node):
-        """Returns the cost of moving from one node to another."""
-        # Diagonal movement costs more
-        dx = abs(from_node[0] - to_node[0])
-        dy = abs(from_node[1] - to_node[1])
-        
-        if dx == 1 and dy == 1:  # Diagonal movement
-            return 1.414  # sqrt(2)
-        else:
-            return 1.0  # Horizontal or vertical movement
-
-    def heuristic(self, a, b):
-        """Heuristic function used for A* pathfinding."""
-        # Manhattan distance
-        return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
-
-    def reconstruct_path(self, came_from, start, goal):
-        """Reconstructs the path from start to goal using the came_from map."""
-        current = goal
-        path = []
-        
-        while current != start:
-            path.append(current)
-            current = came_from[current]
-        
-        path.append(start)
-        path.reverse()
-        
-        return path
 
     def rrt(self, start, goal):
         """Implements the RRT pathfinding algorithm."""
