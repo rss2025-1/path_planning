@@ -3,6 +3,7 @@ from rclpy.node import Node
 
 assert rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, PoseArray
+from skimage.morphology import dilation, square
 from nav_msgs.msg import OccupancyGrid
 from .utils import LineTrajectory
 import numpy as np
@@ -55,7 +56,22 @@ class PathPlan(Node):
 
     def map_cb(self, msg):
         self.map = msg
-        self.get_logger().info("Map received")
+
+        map_data = np.array(msg.data, dtype = np.int8).reshape((msg.info.height, msg.info.width))
+
+        # converting between numpy and occupancy graph
+        normalized_map = np.where(map_data > 0, 1, 0).astype(np.uint8)
+        dilated_normalized_map = dilation(normalized_map, square(10))
+        dilated_map = np.where(dilated_normalized_map == 1, 100, 0).astype(np.int8)
+        dilated_map[map_data == -1] = -1
+
+        dilated_msg = OccupancyGrid()
+        dilated_msg.header = msg.header
+        dilated_msg.info = msg.info
+        dilated_msg.data = dilated_map.flatten().tolis()
+
+        self.map_dilated = dilated_msg
+        self.get_logger().info("Map received and dilated")
 
     def pose_cb(self, pose):
         self.start_pose = pose.pose
@@ -65,7 +81,7 @@ class PathPlan(Node):
         self.goal_pose = msg.pose
         self.get_logger().info("Goal received")
         if hasattr(self, 'start_pose') and hasattr(self, 'map'):
-            self.plan_path(self.start_pose, self.goal_pose, self.map)
+            self.plan_path(self.start_pose, self.goal_pose, self.map_dilated)
         else:
             self.get_logger().warn("Waiting for start pose or map.")
 
