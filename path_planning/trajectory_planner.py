@@ -8,6 +8,9 @@ from nav_msgs.msg import OccupancyGrid
 from .utils import LineTrajectory
 from .spline_path import spline
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
+import random
+from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Point
 
 
 class PathPlan(Node):
@@ -62,6 +65,13 @@ class PathPlan(Node):
             10
         )
 
+        # Visualization for RRT tree
+        self.rrt_tree_pub = self.create_publisher(
+            MarkerArray, 
+            "/rrt_tree", 
+            10
+        )
+
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
         self.splined_trajectory = LineTrajectory(node=self, viz_namespace="/splined_trajectory") # Uncomment for visualization of the splined trajectory
         
@@ -102,6 +112,7 @@ class PathPlan(Node):
 
     def pose_cb(self, msg):
         """Callback for receiving current pose updates."""
+        self.start_pose = msg.pose
         self.current_world_pose = msg.pose.pose
         world_x = msg.pose.pose.position.x
         world_y = msg.pose.pose.position.y
@@ -117,6 +128,7 @@ class PathPlan(Node):
         # if hasattr(self, 'start_pose') and hasattr(self, 'map'):
         #     self.plan_path(self.start_pose, self.goal_pose, self.map_dilated)
         """Callback for receiving goal pose updates."""
+        self.goal_pose = msg.pose
         if not self.map_info or not self.current_grid_pose:
             self.get_logger().warn('Map data or current pose not available, cannot plan path.')
             return
@@ -128,20 +140,20 @@ class PathPlan(Node):
         goal_grid = self.world_to_grid(goal_x, goal_y)
         self.get_logger().info(f"Goal grid pose: {goal_grid}")
         
-        self.plan_path(self.current_grid_pose, goal_grid)
-
-    def plan_path(self, start, goal):
-        """Plans the path from start to goal using A* algorithm and publishes it."""
-        self.get_logger().info("Starting path planning...")
-        
         if self.use_sampling:
-            # RRT implementation (not shown here)
-            self.get_logger().info("Using RRT algorithm")
-            path = self.rrt(start, goal)
+            # Clear the RRT tree markers by publishing an empty marker array
+            self.rrt_tree_pub.publish(MarkerArray())
+            self.plan_path(self.start_pose, self.goal_pose, self.map_info)
         else:
-            # A* implementation
-            self.get_logger().info("Using A* algorithm")
-            path = self.a_star(start, goal)
+            # Clear the RRT tree markers by publishing an empty marker array
+            self.rrt_tree_pub.publish(MarkerArray())
+            self.plan_path_astar(self.current_grid_pose, goal_grid)
+
+    def plan_path_astar(self, start, goal):
+        """Plans the path from start to goal using A* algorithm and publishes it."""
+        self.get_logger().info("Starting A Star path planning...")
+        
+        path = self.a_star(start, goal)
         
         if path:
             self.get_logger().info(f"Path found with {len(path)} points")
@@ -400,11 +412,158 @@ class PathPlan(Node):
         
         return world_x, world_y
 
-    def rrt(self, start, goal):
-        """Implements the RRT pathfinding algorithm."""
-        # RRT implementation (placeholder)
-        self.get_logger().warn("RRT not implemented yet")
-        return None
+    def plan_path(self, start_point, end_point, map):
+
+        # ===== HELPER FUNCTIONS =====
+        def world_to_grid(x, y, map_msg):
+            resolution = map_msg.info.resolution
+            origin = map_msg.info.origin.position
+            
+            u = int((origin.x - x) / resolution)
+            v = int((origin.y - y) / resolution)
+            return u, v
+
+        def grid_to_world(u, v, map_msg):
+            resolution = map_msg.info.resolution
+            origin = map_msg.info.origin.position
+            x = u * resolution + origin.x
+            y = v * resolution + origin.y
+            return x, y
+
+        def is_free(x, y, map_msg):
+            u, v = world_to_grid(x, y, map_msg)
+            width = map_msg.info.width
+            height = map_msg.info.height
+            idx = v * width + u
+            if u < 0 or v < 0 or u >= width or v >= height:
+                return False
+            return map_msg.data[idx] == 0 
+        
+        def is_edge_free(p1, p2, map_msg, step_size=0.05):
+            dist = euclidean_distance(p1, p2)
+            steps = max(int(dist / step_size), 1)
+            for i in range(steps + 1):
+                u = p1[0] + (p2[0] - p1[0]) * i / steps
+                v = p1[1] + (p2[1] - p1[1]) * i / steps
+                if not is_free(u, v, map_msg):
+                    return False
+            return True
+
+        def euclidean_distance(p1, p2):
+            return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+        
+        def steer(from_point, to_point, max_dist=0.5):
+            # Move from "from_point" toward "to_point" but limit step size
+            theta = math.atan2(to_point[1] - from_point[1], to_point[0] - from_point[0])
+            dist = min(max_dist, euclidean_distance(from_point, to_point))
+            new_point = (from_point[0] + dist * math.cos(theta), from_point[1] + dist * math.sin(theta))
+            return new_point
+        
+        def make_edge_marker(start, end, id):
+            marker = Marker()
+            marker.header.frame_id = "map"  # assuming your map frame
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = "rrt_tree"
+            marker.id = id
+            marker.type = Marker.LINE_STRIP
+            marker.action = Marker.ADD
+            marker.scale.x = 0.02  # Line width
+            marker.color.a = 1.0
+            marker.color.r = 0.0
+            marker.color.g = 0.0
+            marker.color.b = 1.0
+            p_start = Point()
+            p_start.x, p_start.y, p_start.z = start[0], start[1], 0.0
+            p_end = Point()
+            p_end.x, p_end.y, p_end.z = end[0], end[1], 0.0
+            marker.points = [p_start, p_end]
+            return marker
+    
+
+        def rrt(start_point, end_point, map):
+            tree_markers = MarkerArray()
+            start = (start_point.pose.position.x, start_point.pose.position.y)
+            goal = (end_point.position.x, end_point.position.y)
+            self.get_logger().info(f"Start: {start}, Goal: {goal}")
+
+            tree = {start: None}  # parent dictionary: node -> parent
+            nodes = [start]
+
+            max_iters = 50000
+            goal_threshold = 0.5  # meters
+
+            # map_bounds = [
+            #     (map.info.origin.position.x, map.info.origin.position.x + map.info.width * map.info.resolution),
+            #     (map.info.origin.position.y, map.info.origin.position.y + map.info.height * map.info.resolution)
+            # ]
+            map_bounds = [
+                (map.info.origin.position.x - map.info.width * map.info.resolution, map.info.origin.position.x),
+                (map.info.origin.position.y - map.info.height * map.info.resolution, map.info.origin.position.y)
+            ]
+
+            self.get_logger().info(f"Map bounds: {map_bounds}")
+            self.get_logger().info(f"Map size: {map.info.width} x {map.info.height}")
+            self.get_logger().info(f"Map resolution: {map.info.resolution}")
+            self.get_logger().info(f"Map origin: {map.info.origin.position.x}, {map.info.origin.position.y}")
+
+            for _ in range(max_iters):
+
+                if random.random() < 0.1: # 10% chance to sample the goal
+                    sample = goal
+                else:
+                    assert map.info.width > 0 and map.info.height > 0
+                    sample = (random.uniform(map_bounds[0][0], map_bounds[0][1]),
+                            random.uniform(map_bounds[1][0], map_bounds[1][1]))
+                              
+                # Find the nearest node in the tree
+                nearest = min(nodes, key=lambda node: euclidean_distance(node, sample))
+
+                # Steer towards the sample
+                new_node = steer(nearest, sample)
+
+                if not is_free(new_node[0], new_node[1], map):
+                    continue
+
+                if not is_edge_free(nearest, new_node, map):
+                    continue
+
+                # Add node
+                nodes.append(new_node)
+                tree[new_node] = nearest
+                tree_markers.markers.append(make_edge_marker(nearest, new_node, len(tree_markers.markers)))
+
+                if _ % 50 == 0:  # Every 50 steps
+                    self.rrt_tree_pub.publish(tree_markers)
+
+                # Check if goal is reached
+                if euclidean_distance(new_node, goal) < goal_threshold:
+                    tree[goal] = new_node
+                    self.get_logger().info("Goal reached")
+                    break
+
+                    
+            path = []
+            current = goal
+            while current is not None:
+                path.append(current)
+                current = tree.get(current)
+
+            path.reverse()
+
+            self.get_logger().info(f"Path, {path}")
+            # Clear any existing trajectory
+            self.trajectory.clear()
+            for (x,y) in path:
+                self.trajectory.addPoint((x,y,0.0))
+
+            self.traj_pub.publish(self.trajectory.toPoseArray())
+            self.trajectory.publish_viz()
+    
+        rrt(self.start_pose, self.goal_pose, self.map_info)
+
+        self.get_logger().info("Path planning completed.")
+
+        
 
 
 def main(args=None):
