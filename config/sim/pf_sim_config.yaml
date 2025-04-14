@@ -5,7 +5,8 @@ trajectory_planner:
     scan_topic: "/scan"
     initial_pose_topic: "/initialpose"
     use_sampling: false
-    use_spline: true
+    use_spline: false
+    dilation_filter_size: 10
 trajectory_follower:
   ros__parameters:
     odom_topic: "/pf/pose/odom"

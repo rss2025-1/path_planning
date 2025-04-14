@@ -3,12 +3,11 @@ import numpy as np
 from rclpy.node import Node
 from queue import PriorityQueue
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, PoseArray
-from skimage.morphology import dilation, square
 from nav_msgs.msg import OccupancyGrid
 from .utils import LineTrajectory
 from .spline_path import spline
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
-
+import cv2
 
 class PathPlan(Node):
     """ Listens for goal pose published by RViz and uses it to plan a path from
@@ -22,12 +21,14 @@ class PathPlan(Node):
         self.declare_parameter('initial_pose_topic', "default")
         self.declare_parameter('use_sampling', False)  # Parameter to choose between A* and RRT
         self.declare_parameter('use_spline', False)  # Parameter to spline the path
+        self.declare_parameter('dilation_filter_size', 10)
 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.map_topic = self.get_parameter('map_topic').get_parameter_value().string_value
         self.initial_pose_topic = self.get_parameter('initial_pose_topic').get_parameter_value().string_value
         self.use_sampling = self.get_parameter('use_sampling').get_parameter_value().bool_value
         self.use_spline = self.get_parameter('use_spline').get_parameter_value().bool_value
+        self.dilation_filter_size = self.get_parameter('dilation_filter_size').get_parameter_value().integer_value
 
         # Create a QoS profile with transient local durability for the map subscription
         map_qos = QoSProfile(
@@ -80,24 +81,24 @@ class PathPlan(Node):
 
     def map_cb(self, msg):
         """Callback for receiving map updates."""
-        self.map_info = msg
         self.get_logger().info(f"Map received: width={msg.info.width}, height={msg.info.height}, resolution={msg.info.resolution}")
         self.get_logger().info(f"Map origin: x={msg.info.origin.position.x}, y={msg.info.origin.position.y}")
 
         map_data = np.array(msg.data, dtype = np.int8).reshape((msg.info.height, msg.info.width))
 
         # converting between numpy and occupancy graph
-        normalized_map = np.where(map_data > 0, 1, 0).astype(np.uint8)
-        dilated_normalized_map = dilation(normalized_map, square(10))
+        normalized_map = np.where(map_data == 0, 0, 1).astype(np.uint8)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (self.dilation_filter_size, self.dilation_filter_size))
+        dilated_normalized_map = cv2.dilate(normalized_map, kernel)
         dilated_map = np.where(dilated_normalized_map == 1, 100, 0).astype(np.int8)
-        dilated_map[map_data == -1] = -1
 
         dilated_msg = OccupancyGrid()
         dilated_msg.header = msg.header
         dilated_msg.info = msg.info
-        dilated_msg.data = dilated_map.flatten().tolis()
+        dilated_msg.data = dilated_map.flatten().tolist()
 
-        self.map_dilated = dilated_msg
+        self.map_info = dilated_msg
+        # self.map_info = msg # Comment when using the dilated map
         self.get_logger().info("Map received and dilated")
 
     def pose_cb(self, msg):
@@ -112,10 +113,6 @@ class PathPlan(Node):
             self.get_logger().info(f"Current grid pose: {self.current_grid_pose}")
 
     def goal_cb(self, msg):
-        # self.goal_pose = msg.pose
-        # self.get_logger().info("Goal received")
-        # if hasattr(self, 'start_pose') and hasattr(self, 'map'):
-        #     self.plan_path(self.start_pose, self.goal_pose, self.map_dilated)
         """Callback for receiving goal pose updates."""
         if not self.map_info or not self.current_grid_pose:
             self.get_logger().warn('Map data or current pose not available, cannot plan path.')
