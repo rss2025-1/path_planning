@@ -6,6 +6,10 @@ import os
 import json
 import numpy as np
 def spline(path):
+    """
+    Takes in path in form [(x0,y0), ... , (xn, yn)] 
+    Returns smoother spline path, in form [(x0,y0), ... , (xn, yn)]
+    """
     x, y = zip(*path)
     x,y  = list(x),list(y) 
     tck, u = splprep([x, y], s=10)  # adjust s for smoothness
@@ -13,7 +17,6 @@ def spline(path):
     return list(zip(x_smooth, y_smooth))
 # Provided trajectory points
 def example():
-
     num_points = 25
     x_start = 0
     x_end = 50
@@ -32,7 +35,7 @@ def example():
 
     # Evaluate the spline at more points for smooth curve
     u_fine = np.linspace(0, 1, 2*num_points)
-    x_smooth, y_smooth = splev(u, tck)
+    x_smooth, y_smooth = splev(u_fine, tck)
     plt.figure(figsize=(10, 6))
     plt.plot(x, y, 'ro-', label='Original Points')
     plt.plot(x_smooth, y_smooth, 'b-', linewidth=2, label='Smoothed Spline')

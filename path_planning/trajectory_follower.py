@@ -7,7 +7,7 @@ from nav_msgs.msg import Odometry
 from tf_transformations import quaternion_from_euler, euler_from_quaternion
 from visualization_msgs.msg import Marker
 from .rviz_tools import RVizTools
-
+from .spline_path import spline
 
 from .utils import LineTrajectory
 
@@ -94,10 +94,14 @@ class PurePursuit(Node):
         """
 
         traj = np.array(self.trajectory.points)
+        
         P = np.array([car_x, car_y])
         if traj.shape[0] < 2:
             self.get_logger().error("Not enough points in trajectory to compute closest point.")
             return None
+
+        traj = spline(traj)
+        self.get_logger().info(f"{traj[:5]}")
 
         # Step 1: Find closest point on trajectory
         closest_idx = self.find_closest_point_on_trajectory(traj, P)
@@ -125,7 +129,6 @@ class PurePursuit(Node):
             sqrt_disc = np.sqrt(discriminant)
             t1 = (-b - sqrt_disc) / (2 * a)
             t2 = (-b + sqrt_disc) / (2 * a)
-
             
             return (A + max(t1,t2)* d).tolist()
 
