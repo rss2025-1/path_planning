@@ -189,7 +189,7 @@ class LineTrajectory:
         elif self.end_pub.get_subscription_count() == 0:
             print("Not publishing end point, no subscribers")
 
-    def publish_trajectory(self, duration=0.0):
+    def publish_trajectory(self, duration=0.0, color: Tuple[float, float, float, float]=(1.0, 1.0, 1.0, 0.5)):
         should_publish = len(self.points) > 1
         if self.visualize and self.traj_pub.get_subscription_count() > 0:
             self.node.get_logger().info("Publishing trajectory")
@@ -202,10 +202,7 @@ class LineTrajectory:
             if should_publish:
                 marker.action = marker.ADD
                 marker.scale.x = 0.3
-                marker.color.r = 1.0
-                marker.color.g = 1.0
-                marker.color.b = 1.0
-                marker.color.a = 1.0
+                marker.color.r, marker.color.g, marker.color.b, marker.color.a = color
                 for p in self.points:
                     pt = Point()
                     pt.x = p[0]
