@@ -4,10 +4,9 @@ from ackermann_msgs.msg import AckermannDriveStamped
 from geometry_msgs.msg import PoseArray
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
-from tf_transformations import quaternion_from_euler, euler_from_quaternion
+from tf_transformations import euler_from_quaternion
 from visualization_msgs.msg import Marker
 from .rviz_tools import RVizTools
-from .spline_path import spline
 
 from .utils import LineTrajectory
 
@@ -99,9 +98,6 @@ class PurePursuit(Node):
         if traj.shape[0] < 2:
             self.get_logger().error("Not enough points in trajectory to compute closest point.")
             return None
-
-        traj = spline(traj)
-        self.get_logger().info(f"{traj[:5]}")
 
         # Step 1: Find closest point on trajectory
         closest_idx = self.find_closest_point_on_trajectory(traj, P)

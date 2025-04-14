@@ -1,11 +1,10 @@
 import rclpy
 from rclpy.node import Node
 from queue import PriorityQueue
-from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, PoseArray, Pose
+from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, PoseArray
 from nav_msgs.msg import OccupancyGrid
 from .utils import LineTrajectory
-import math
-import random
+from .spline_path import spline
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 
 
@@ -20,11 +19,13 @@ class PathPlan(Node):
         self.declare_parameter('map_topic', "default")
         self.declare_parameter('initial_pose_topic', "default")
         self.declare_parameter('use_sampling', False)  # Parameter to choose between A* and RRT
+        self.declare_parameter('use_spline', False)  # Parameter to spline the path
 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.map_topic = self.get_parameter('map_topic').get_parameter_value().string_value
         self.initial_pose_topic = self.get_parameter('initial_pose_topic').get_parameter_value().string_value
         self.use_sampling = self.get_parameter('use_sampling').get_parameter_value().bool_value
+        self.use_spline = self.get_parameter('use_spline').get_parameter_value().bool_value
 
         # Create a QoS profile with transient local durability for the map subscription
         map_qos = QoSProfile(
@@ -60,6 +61,7 @@ class PathPlan(Node):
         )
 
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
+        self.splined_trajectory = LineTrajectory(node=self, viz_namespace="/splined_trajectory") # Uncomment for visualization of the splined trajectory
         
         # Initialize map and pose variables
         self.map_info = None
@@ -67,8 +69,9 @@ class PathPlan(Node):
         self.current_world_pose = None
         
         # Debug: Print all parameters
-        self.get_logger().info(f"Initialized with parameters: odom_topic={self.odom_topic}, map_topic={self.map_topic}, initial_pose_topic={self.initial_pose_topic}, use_sampling={self.use_sampling}")
+        self.get_logger().info(f"Initialized with parameters: odom_topic={self.odom_topic}, map_topic={self.map_topic}, initial_pose_topic={self.initial_pose_topic}, use_sampling={self.use_sampling}, use_spline={self.use_spline}")
         self.get_logger().info(f"Visualization namespace: {self.trajectory.viz_namespace}")
+        self.get_logger().info(f"Splined Trajectory namespace: {self.splined_trajectory.viz_namespace}")
         
         # Try to get the map from the topic directly
         self.get_logger().info(f"Waiting for map on topic: {self.map_topic}")
@@ -123,12 +126,15 @@ class PathPlan(Node):
             # Convert path to world coordinates and create trajectory
             self.trajectory.clear()
             
-            world_path = []
             for grid_cell in path:
                 world_pos = self.grid_to_world(grid_cell[0], grid_cell[1])
-                world_path.append(world_pos)
                 # The addPoint method takes a single tuple parameter
                 self.trajectory.addPoint(world_pos)
+
+            # Spline the trajectory for smoother trajectory
+            if self.use_spline:
+                self.get_logger().info("Applying spline to trajectory")
+                self.trajectory.points = spline(self.trajectory.points)
             
             # Create and publish pose array
             pose_array = self.trajectory.toPoseArray()
@@ -138,6 +144,13 @@ class PathPlan(Node):
             # Publish visualization
             self.get_logger().info("Publishing visualization")
             self.trajectory.publish_viz()
+
+            # Publish splined visualization to compare with original trajectory (when use_spline is False, as otherwise trajectory is the splined trajectory)
+            if not self.use_spline:
+                self.get_logger().info("Publishing splined visualization")
+                self.splined_trajectory.clear()
+                self.splined_trajectory.points = spline(self.trajectory.points)
+                self.splined_trajectory.publish_trajectory(color=(0.0, 1.0, 1.0, 0.7))
             
             # The trajectory already has the start and end points from the path
             # No need to publish them separately
