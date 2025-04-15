@@ -25,7 +25,7 @@ class PurePursuit(Node):
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
    
         self.lookahead = 1.0 #0.5  # FILL IN #
-        self.speed = 4.0 #0.5  # FILL IN #
+        self.speed = 1.0 #0.5  # FILL IN #
         self.wheelbase_length = 0.34  # FILL IN #
 
         self.trajectory = LineTrajectory(self, "/followed_trajectory")
@@ -60,7 +60,7 @@ class PurePursuit(Node):
         
         steering_angle = self.compute_steering_angle(car_x, car_y, yaw, lookahead_point)
         self.publish_drive_command(steering_angle)
-
+        self.get_logger().info(f"steering_angle: {steering_angle}")
         self.log_counter += 1
 
     def find_closest_point_on_trajectory(self, traj, P):
@@ -96,7 +96,7 @@ class PurePursuit(Node):
         
         P = np.array([car_x, car_y])
         if traj.shape[0] < 2:
-            self.get_logger().error("Not enough points in trajectory to compute closest point.")
+            #self.get_logger().error("Not enough points in trajectory to compute closest point.")
             return None
 
         # Step 1: Find closest point on trajectory
@@ -150,12 +150,15 @@ class PurePursuit(Node):
         # rotate lookahead point into the robot frame 
         local_x = np.cos(-yaw) * dx - np.sin(-yaw) * dy
         local_y = np.sin(-yaw) * dx + np.cos(-yaw) * dy
-        # self.get_logger().info(f"{local_x, local_y}")
+        self.get_logger().info(f"(local_X, local_y): {local_x, local_y}")
+        self.get_logger().info(f"(global_X, global_y): {dx, dy}")
+        self.get_logger().info(f"lookahead pt: {lookahead_point}") 
+        self.get_logger().info(f"car: ({car_x}, {car_y}, {yaw})") 
         RVizTools.plot_circle(self.lookahead, self.radius_pub) #visualize pure pursuit
         RVizTools.plot_line(np.array([0,local_x]), np.array([0,local_y]), self.line_pub)
         if local_x <= 0:
             # Lookahead point is behind the vehicle
-            self.get_logger().info("Lookahead point is behind the vehicle.")
+            #self.get_logger().info("Lookahead point is behind the vehicle.")
             return 0.0  # No steering needed if the point is behind
 
         # Compute the curvature and then the steering angle using the bicycle model

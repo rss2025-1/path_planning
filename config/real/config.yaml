@@ -1,6 +1,6 @@
 trajectory_planner:
   ros__parameters:
-    odom_topic: "/vesc/odom"
+    odom_topic: "/pf/pose/odom"
     map_topic: "/map"
     scan_topic: "/scan"
     initial_pose_topic: "/initialpose"
@@ -8,5 +8,5 @@ trajectory_planner:
     use_spline: true
 trajectory_follower:
   ros__parameters:
-    odom_topic: "/vesc/odom"
+    odom_topic: "/pf/pose/odom"
     drive_topic: '/vesc/low_level/input/navigation'

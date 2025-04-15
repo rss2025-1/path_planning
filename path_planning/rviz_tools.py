@@ -3,7 +3,7 @@ from visualization_msgs.msg import Marker
 import numpy as np
 class RVizTools:
     @staticmethod
-    def plot_line(x, y, publisher, color = (1., 0., 0.), frame = "/base_link"):
+    def plot_line(x, y, publisher, color = (1., 0., 0.), frame = "/base_link_pf"):
         """
         Publishes the points (x, y) to publisher
         so they can be visualized in rviz as
@@ -34,7 +34,7 @@ class RVizTools:
             line_seg.points.append(p)
 
         publisher.publish(line_seg)
-    def plot_circle(radius,  publisher, color=(0., 1., 0.), frame="/base_link", num_points=100):
+    def plot_circle(radius,  publisher, color=(0., 1., 0.), frame="/base_link_pf", num_points=100):
    
         theta = np.linspace(0, 2 * np.pi, num_points)
         x =  radius * np.cos(theta)
