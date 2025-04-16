@@ -6,7 +6,7 @@ trajectory_planner:
     initial_pose_topic: "/initialpose"
     use_sampling: false
     use_spline: true
-    dilation_filter_size: 30
+    dilation_filter_size: 10
 trajectory_follower:
   ros__parameters:
     odom_topic: "/odom"
