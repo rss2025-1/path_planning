@@ -117,11 +117,11 @@ class PathPlan(Node):
         self.current_world_pose = msg.pose.pose
         world_x = msg.pose.pose.position.x
         world_y = msg.pose.pose.position.y
-        self.get_logger().info(f"Pose received: x={world_x}, y={world_y}")
+        # self.get_logger().info(f"Pose received: x={world_x}, y={world_y}")
         
         if self.map_info is not None:
             self.current_grid_pose = self.world_to_grid(world_x, world_y)
-            self.get_logger().info(f"Current grid pose: {self.current_grid_pose}")
+            # self.get_logger().info(f"Current grid pose: {self.current_grid_pose}")
 
     def goal_cb(self, msg):
         """Callback for receiving goal pose updates."""
@@ -164,21 +164,21 @@ class PathPlan(Node):
 
             # Spline the trajectory for smoother trajectory
             if self.use_spline:
-                self.get_logger().info("Applying spline to trajectory")
+                # self.get_logger().info("Applying spline to trajectory")
                 self.trajectory.points = spline(self.trajectory.points)
             
             # Create and publish pose array
             pose_array = self.trajectory.toPoseArray()
-            self.get_logger().info(f"Publishing trajectory with {len(pose_array.poses)} poses")
+            # self.get_logger().info(f"Publishing trajectory with {len(pose_array.poses)} poses")
             self.traj_pub.publish(pose_array)
             
             # Publish visualization
-            self.get_logger().info("Publishing visualization")
+            # self.get_logger().info("Publishing visualization")
             self.trajectory.publish_viz()
 
             # Publish splined visualization to compare with original trajectory (when use_spline is False, as otherwise trajectory is the splined trajectory)
             if not self.use_spline:
-                self.get_logger().info("Publishing splined visualization")
+                # self.get_logger().info("Publishing splined visualization")
                 self.splined_trajectory.clear()
                 self.splined_trajectory.points = spline(self.trajectory.points)
                 self.splined_trajectory.publish_trajectory(color=(0.0, 1.0, 1.0, 0.7))
@@ -186,7 +186,7 @@ class PathPlan(Node):
             # The trajectory already has the start and end points from the path
             # No need to publish them separately
         else:
-            self.get_logger().warn("No path found, trajectory will be empty")
+            # self.get_logger().warn("No path found, trajectory will be empty")
             self.trajectory.clear()
             pose_array = self.trajectory.toPoseArray()
             self.traj_pub.publish(pose_array)
@@ -196,8 +196,8 @@ class PathPlan(Node):
 
     def a_star(self, start, goal):
         """Implements the A* pathfinding algorithm."""
-        self.get_logger().info(f"A* start grid: {start}")
-        self.get_logger().info(f"A* goal grid: {goal}")
+        # self.get_logger().info(f"A* start grid: {start}")
+        # self.get_logger().info(f"A* goal grid: {goal}")
         
         # Skip walkable checks - just proceed with the algorithm
         frontier = PriorityQueue()

@@ -155,7 +155,7 @@ class PurePursuit(Node):
         RVizTools.plot_line(np.array([0,local_x]), np.array([0,local_y]), self.line_pub)
         if local_x <= 0:
             # Lookahead point is behind the vehicle
-            self.get_logger().info("Lookahead point is behind the vehicle.")
+            # self.get_logger().info("Lookahead point is behind the vehicle.")
             return 0.0  # No steering needed if the point is behind
 
         # Compute the curvature and then the steering angle using the bicycle model
@@ -174,8 +174,8 @@ class PurePursuit(Node):
         self.drive_pub.publish(drive_msg)
 
     def trajectory_callback(self, msg):
-        self.get_logger().info(f"Receiving new trajectory {len(msg.poses)} points")
-        self.get_logger().info(f"msg.poses type is {msg.poses}")
+        # self.get_logger().info(f"Receiving new trajectory {len(msg.poses)} points")
+        # self.get_logger().info(f"msg.poses type is {msg.poses}")
         
         self.trajectory.clear()
         self.trajectory.fromPoseArray(msg)
