@@ -150,10 +150,10 @@ class PurePursuit(Node):
         # rotate lookahead point into the robot frame 
         local_x = np.cos(-yaw) * dx - np.sin(-yaw) * dy
         local_y = np.sin(-yaw) * dx + np.cos(-yaw) * dy
-        self.get_logger().info(f"(local_X, local_y): {local_x, local_y}")
-        self.get_logger().info(f"(global_X, global_y): {dx, dy}")
-        self.get_logger().info(f"lookahead pt: {lookahead_point}") 
-        self.get_logger().info(f"car: ({car_x}, {car_y}, {yaw})") 
+        # self.get_logger().info(f"(local_X, local_y): {local_x, local_y}")
+        # self.get_logger().info(f"(global_X, global_y): {dx, dy}")
+        # self.get_logger().info(f"lookahead pt: {lookahead_point}") 
+        # self.get_logger().info(f"car: ({car_x}, {car_y}, {yaw})") 
         RVizTools.plot_circle(self.lookahead, self.radius_pub) #visualize pure pursuit
         RVizTools.plot_line(np.array([0,local_x]), np.array([0,local_y]), self.line_pub)
         if local_x <= 0:
