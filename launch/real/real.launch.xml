@@ -1,12 +1,12 @@
 <launch>
     <!-- Safety Controller Node -->
-    <node
+    <!-- <node
         pkg="wall_follower"
         exec="safety_controller"
         name="safety_controller"
         output="screen">
         <param from="$(find-pkg-share wall_follower)/config/wall_follower_params.yaml"/>
-    </node>
+    </node> -->
     <node 
         pkg="localization" 
         exec="particle_filter" 
