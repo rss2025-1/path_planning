@@ -199,8 +199,8 @@ class PathPlan(Node):
             self.trajectory.publish_viz()
         
         self.get_logger().info("Path planning completed.")
-        self.get_logger().info(f"Total trajectory length: {self.total_trajectory_length(self.trajectory.points)}")
-        self.get_logger().info(f"Total splined trajectory length: {self.total_trajectory_length(self.splined_trajectory.points)}")
+        # self.get_logger().info(f"Total trajectory length: {self.total_trajectory_length(self.trajectory.points)}")
+        # self.get_logger().info(f"Total splined trajectory length: {self.total_trajectory_length(self.splined_trajectory.points)}")
 
     def a_star(self, start, goal):
         """Implements the A* pathfinding algorithm."""
@@ -581,14 +581,14 @@ class PathPlan(Node):
             self.traj_pub.publish(self.trajectory.toPoseArray())
             self.trajectory.publish_viz()
 
-            if not self.use_spline:
-                # self.get_logger().info("Publishing splined visualization")
-                self.splined_trajectory.clear()
-                self.splined_trajectory.points = spline(self.trajectory.points)
-                self.splined_trajectory.publish_trajectory(color=(0.0, 1.0, 1.0, 0.7))
+            # if not self.use_spline:
+            #     # self.get_logger().info("Publishing splined visualization")
+            #     self.splined_trajectory.clear()
+            #     self.splined_trajectory.points = spline(self.trajectory.points)
+            #     self.splined_trajectory.publish_trajectory(color=(0.0, 1.0, 1.0, 0.7))
 
-            self.get_logger().info(f"Total trajectory length: {self.total_trajectory_length(self.trajectory.points)}")
-            self.get_logger().info(f"Total splined trajectory length: {self.total_trajectory_length(self.splined_trajectory.points)}")
+            # self.get_logger().info(f"Total trajectory length: {self.total_trajectory_length(self.trajectory.points)}")
+            # self.get_logger().info(f"Total splined trajectory length: {self.total_trajectory_length(self.splined_trajectory.points)}")
     
         rrt(self.start_pose, self.goal_pose, self.map_info)
 
