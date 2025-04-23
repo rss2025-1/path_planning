@@ -146,6 +146,12 @@ class PathPlan(Node):
             self.rrt_tree_pub.publish(MarkerArray())
             self.plan_path_astar(self.current_grid_pose, goal_grid)
 
+    def total_trajectory_length(self, trajectory_points):
+        pts = np.array(trajectory_points)
+        diffs = np.diff(pts, axis=0) 
+        segment_lengths = np.hypot(diffs[:, 0], diffs[:, 1])
+        return segment_lengths.sum()
+
     def plan_path_astar(self, start, goal):
         """Plans the path from start to goal using A* algorithm and publishes it."""
         self.get_logger().info("Starting A Star path planning...")
@@ -193,6 +199,8 @@ class PathPlan(Node):
             self.trajectory.publish_viz()
         
         self.get_logger().info("Path planning completed.")
+        self.get_logger().info(f"Total trajectory length: {self.total_trajectory_length(self.trajectory.points)}")
+        self.get_logger().info(f"Total splined trajectory length: {self.total_trajectory_length(self.splined_trajectory.points)}")
 
     def a_star(self, start, goal):
         """Implements the A* pathfinding algorithm."""
@@ -278,17 +286,35 @@ class PathPlan(Node):
 
     def cost(self, current, next_node):
         """
-        Calculate the cost of moving from current to next_node.
-        Diagonal moves cost more than orthogonal moves.
+        Movement cost plus a penalty if next_node is adjacent to any obstacle.
+        Diagonals cost sqrt(2), orthogonals cost 1.0.
         """
         dx = abs(next_node[0] - current[0])
         dy = abs(next_node[1] - current[1])
         
-        # Diagonal movement costs sqrt(2) ≈ 1.414
-        if dx == 1 and dy == 1:
-            return 1.414
-        else:
-            return 1.0
+        # base motion cost
+        base = 1.414 if (dx == 1 and dy == 1) else 1.0
+        
+        # wall‐adjacency penalty
+        penalty = 1.0 if self.adjacent_to_obstacle(next_node) else 0.0
+        
+        return base + penalty
+        
+    def adjacent_to_obstacle(self, node):
+        """
+        Returns True if any cell within chebyshev-distance <= penalty_radius
+        around `node` is occupied.
+        """
+        x0, y0 = node
+        r = 10
+        for dx in range(-r, r + 1):
+            for dy in range(-r, r + 1):
+                # only check within a square; skip the node itself
+                if dx == 0 and dy == 0:
+                    continue
+                if not self.is_cell_free(x0 + dx, y0 + dy):
+                    return True
+        return False
 
     def heuristic(self, a, b):
         """
@@ -475,7 +501,6 @@ class PathPlan(Node):
             p_end.x, p_end.y, p_end.z = end[0], end[1], 0.0
             marker.points = [p_start, p_end]
             return marker
-    
 
         def rrt(start_point, end_point, map):
             tree_markers = MarkerArray()
@@ -551,10 +576,19 @@ class PathPlan(Node):
             # Clear any existing trajectory
             self.trajectory.clear()
             for (x,y) in path:
-                self.trajectory.addPoint((x,y,0.0))
+                self.trajectory.addPoint((x,y))
 
             self.traj_pub.publish(self.trajectory.toPoseArray())
             self.trajectory.publish_viz()
+
+            if not self.use_spline:
+                # self.get_logger().info("Publishing splined visualization")
+                self.splined_trajectory.clear()
+                self.splined_trajectory.points = spline(self.trajectory.points)
+                self.splined_trajectory.publish_trajectory(color=(0.0, 1.0, 1.0, 0.7))
+
+            self.get_logger().info(f"Total trajectory length: {self.total_trajectory_length(self.trajectory.points)}")
+            self.get_logger().info(f"Total splined trajectory length: {self.total_trajectory_length(self.splined_trajectory.points)}")
     
         rrt(self.start_pose, self.goal_pose, self.map_info)
 
