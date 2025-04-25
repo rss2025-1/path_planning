@@ -5,6 +5,6 @@
         exec="safety_controller"
         name="safety_controller"
         output="screen">
-        <param from="$(find wall_follower)/config/wall_follower_params.yaml"/>
+        <param from="$(find-pkg-share wall_follower)/config/wall_follower_params.yaml"/>
     </node>
 </launch>

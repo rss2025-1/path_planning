@@ -41,9 +41,12 @@ class PurePursuit(Node):
                                                 self.pose_callback,
                                                 1)
         self.log_counter = 0
-
+        self.cross_track_errors = []
+        self.car_xy_path = []         # List of (x, y) tuples for the car
+        self.traj_xy_path = []        # List of (x, y) trajectory points (only stored once)
     def pose_callback(self, odometry_msg):
         car_x, car_y, yaw = self.get_vehicle_pose(odometry_msg)
+        self.car_xy_path.append((car_x, car_y))
 
         lookahead_point = self.find_lookahead_point(car_x, car_y)
 
@@ -82,7 +85,28 @@ class PurePursuit(Node):
         closest_idx = np.argmin(dists)
 
         return closest_idx
+    def compute_cross_track_error(self, car_x, car_y):
+        traj = np.array(self.trajectory.points)
+        P = np.array([car_x, car_y])
+        closest_idx = self.find_closest_point_on_trajectory(traj, P)
+    
+        A = traj[closest_idx]
+        B = traj[closest_idx + 1]
 
+        AB = B - A
+        AP = P - A
+
+        proj_len = np.dot(AP, AB) / np.linalg.norm(AB)
+        proj_point = A + (proj_len / np.linalg.norm(AB)) * AB
+
+        error_vec = P - proj_point
+        cte = np.linalg.norm(error_vec)
+
+        # Determine sign using cross product: positive if point is left of trajectory
+        cross = np.cross(AB, AP)
+        if cross < 0:
+            cte *= -1
+        return cte
     def find_lookahead_point(self, car_x, car_y):
         """
         Use pure pursuit strategy:
@@ -153,15 +177,19 @@ class PurePursuit(Node):
         # Compute the curvature and then the steering angle using the bicycle model
         eta = np.arctan2(local_y, local_x)
         steering_angle = np.arctan2(2 * self.wheelbase_length * np.sin(eta), self.lookahead)
-
+        steering_angle_threshold = 1e-10  # Adjust this value as needed
+        if abs(steering_angle) < steering_angle_threshold:
+            steering_angle = steering_angle_threshold * np.sign(steering_angle)
         return steering_angle
     
     def publish_drive_command(self, steering_angle, speed=None):
         """ Publish the Ackermann drive message with the computed steering angle and speed. """
-        if speed is None:
-            speed = self.speed
+        
+        speed = self.speed
         drive_msg = AckermannDriveStamped()
+        
         drive_msg.drive.steering_angle = steering_angle
+        self.get_logger().info(f"{steering_angle}")
         drive_msg.drive.speed = speed
         self.drive_pub.publish(drive_msg)
 
@@ -173,10 +201,41 @@ class PurePursuit(Node):
         self.trajectory.publish_viz(duration=0.0)
 
         self.initialized_traj = True
-
+    def destroy_node(self):
+        if self.cross_track_errors:
+            avg_cte = sum(self.cross_track_errors) / len(self.cross_track_errors)
+            self.get_logger().info(f"\n\n========== Run Complete ==========\n"
+                                f"Average Cross Track Error: {avg_cte:.3f} meters\n"
+                                f"Number of Samples: {len(self.cross_track_errors)}\n"
+                                f"==================================\n")
+        else:
+            self.get_logger().info("No cross track error data collected.")
+        # with open("car_xy_4_125.csv", "w", newline="") as carfile:
+        #     writer = csv.writer(carfile)
+        #     writer.writerow(["Car_X", "Car_Y"])
+        #     for x, y in self.car_xy_path:
+        #         writer.writerow([x, y])
+        #         super().destroy_node()
+        with open("trajectory_xy_1.csv", "w", newline="") as trajfile:
+            writer = csv.writer(trajfile)
+            writer.writerow(["Traj_X", "Traj_Y"])
+            for x, y in self.traj_xy_path:
+                writer.writerow([x, y])
 
 def main(args=None):
     rclpy.init(args=args)
     follower = PurePursuit()
-    rclpy.spin(follower)
-    rclpy.shutdown()
+
+    def shutdown_handler(sig, frame):
+        follower.get_logger().info("Shutting down node...")
+        follower.destroy_node()  # This will now call your overridden method
+        rclpy.shutdown()
+
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    try:
+        rclpy.spin(follower)
+    except KeyboardInterrupt:
+        shutdown_handler(None, None)
+    # rclpy.spin(follower)
+    # rclpy.shutdown()
