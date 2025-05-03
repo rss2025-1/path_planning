@@ -12,7 +12,7 @@ def spline(path):
     """
     x, y = zip(*path)
     x,y  = list(x),list(y) 
-    tck, u = splprep([x, y], s=10)  # adjust s for smoothness
+    tck, u = splprep([x, y], s=1)  # adjust s for smoothness
     x_smooth, y_smooth = splev(u, tck)
     return list(zip(x_smooth, y_smooth))
 # Provided trajectory points
