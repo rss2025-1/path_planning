@@ -46,9 +46,20 @@ class PurePursuit(Node):
         self.closest_segment_pub = self.create_publisher(Marker, "/closest_segment", 10)
 
         self.log_counter = 0
+        self.goal_pose = None
+        self.goal_reached_threshold = 0.2 # meters, tune as needed
 
     def pose_callback(self, odometry_msg):
         car_x, car_y, yaw = self.get_vehicle_pose(odometry_msg)
+
+        # Check if goal is reached
+        if self.goal_pose is not None:
+            current_pos = np.array([car_x, car_y])
+            dist_to_goal = np.linalg.norm(current_pos - self.goal_pose)
+            if dist_to_goal < self.goal_reached_threshold:
+                self.get_logger().info(f"Goal reached (distance: {dist_to_goal:.2f}m < {self.goal_reached_threshold}m). Stopping.")
+                self.publish_drive_command(steering_angle=0.0, speed=0.0)
+                return 
 
         lookahead_point = self.find_lookahead_point(car_x, car_y)
 
@@ -183,6 +194,14 @@ class PurePursuit(Node):
         self.trajectory.clear()
         self.trajectory.fromPoseArray(msg)
         self.trajectory.publish_viz(duration=0.0)
+
+        if len(msg.poses) > 0:
+            last_pose = msg.poses[-1].position
+            self.goal_pose = np.array([last_pose.x, last_pose.y])
+            self.get_logger().info(f"New trajectory received. Goal set to: ({self.goal_pose[0]:.2f}, {self.goal_pose[1]:.2f})")
+        else:
+            self.goal_pose = None # Reset goal if trajectory is empty
+            self.get_logger().info("Received empty trajectory. Goal cleared.")
 
         self.initialized_traj = True
 
