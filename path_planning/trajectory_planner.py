@@ -48,7 +48,7 @@ class PathPlan(Node):
 
         self.goal_sub = self.create_subscription(
             PoseStamped,
-            "/goal_pose",
+            "/current_goal_pose", # Changed to a custom topic published to by the state machine; the state machine will subscribe to goal_pose
             self.goal_cb,
             10
         )
@@ -61,7 +61,7 @@ class PathPlan(Node):
 
         self.pose_sub = self.create_subscription(
             PoseWithCovarianceStamped,
-            self.initial_pose_topic,
+            "/current_start_pose", # changed to a custom topic published to by the state machine; the state machine will subscribe to initial_pose
             self.pose_cb,
             10
         )

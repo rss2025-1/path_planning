@@ -3,7 +3,7 @@ trajectory_planner:
     odom_topic: "/pf/pose/odom"
     map_topic: "/map"
     scan_topic: "/scan"
-    initial_pose_topic: "/initialpose"
+    initial_pose_topic: "/current_start_pose"
     use_sampling: false
     use_spline: true
 trajectory_follower:

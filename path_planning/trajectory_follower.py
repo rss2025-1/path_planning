@@ -7,6 +7,7 @@ from nav_msgs.msg import Odometry
 from tf_transformations import euler_from_quaternion
 from visualization_msgs.msg import Marker
 from .rviz_tools import RVizTools
+from std_msgs.msg import Bool
 
 from .utils import LineTrajectory
 
@@ -49,6 +50,8 @@ class PurePursuit(Node):
         self.goal_pose = None
         self.goal_reached_threshold = 0.2 # meters, tune as needed
 
+        self.goal_reached_pub = self.create_publisher(Bool, "/goal_reached", 10)
+
     def pose_callback(self, odometry_msg):
         car_x, car_y, yaw = self.get_vehicle_pose(odometry_msg)
 
@@ -58,8 +61,14 @@ class PurePursuit(Node):
             dist_to_goal = np.linalg.norm(current_pos - self.goal_pose)
             if dist_to_goal < self.goal_reached_threshold:
                 self.get_logger().info(f"Goal reached (distance: {dist_to_goal:.2f}m < {self.goal_reached_threshold}m). Stopping.")
-                self.publish_drive_command(steering_angle=0.0, speed=0.0)
+                self.goal_reached_pub.publish(Bool(data=bool(True)))
+                self.goal_pose = None
                 return 
+
+        # If no goal is set, stop the car; this occurs at the start and when a goal is cleared
+        if self.goal_pose is None:
+            self.publish_drive_command(steering_angle=0.0, speed=0.0)
+            return
 
         lookahead_point = self.find_lookahead_point(car_x, car_y)
 
