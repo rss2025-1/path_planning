@@ -10,7 +10,7 @@ from .rviz_tools import RVizTools
 from std_msgs.msg import Bool
 
 from .utils import LineTrajectory
-
+import time
 
 class PurePursuit(Node):
     """ Implements Pure Pursuit trajectory tracking with a fixed lookahead and speed.
@@ -63,6 +63,12 @@ class PurePursuit(Node):
                 self.get_logger().info(f"Goal reached (distance: {dist_to_goal:.2f}m < {self.goal_reached_threshold}m). Stopping.")
                 self.goal_reached_pub.publish(Bool(data=bool(True)))
                 self.goal_pose = None
+                start = time.time()
+                while time.time() - start < 5.0:
+                    drive_msg = AckermannDriveStamped()
+                    drive_msg.header.stamp = self.get_clock().now().to_msg()
+                    drive_msg.drive.speed = -1.0
+                    self.drive_pub.publish(drive_msg)
                 return 
 
         # If no goal is set, stop the car; this occurs at the start and when a goal is cleared
