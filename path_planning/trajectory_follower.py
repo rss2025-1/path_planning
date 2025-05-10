@@ -26,7 +26,7 @@ class PurePursuit(Node):
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
    
         self.lookahead = 1.25 #0.5  # FILL IN #
-        self.speed = 1.0 #0.5  # FILL IN #
+        self.speed = 0.75 #0.5  # FILL IN #
         self.wheelbase_length = 0.34  # FILL IN #
 
         self.trajectory = LineTrajectory(self, "/followed_trajectory")
